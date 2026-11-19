@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Aprender carnet de conducir</title>
+<link rel="manifest" href="manifest.json"><link rel="icon" href="icono-192.png">
+<link rel="apple-touch-icon" href="icono-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Carnet B"><meta name="theme-color" content="#1e50c8">
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{--azul:#1e50c8;--fondo:#f3f5f8;--texto:#1b2230;--suave:#5b6577}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;background:linear-gradient(160deg,#1e50c8,#2fa0b4);color:var(--texto);display:flex;align-items:center;justify-content:center;padding:16px}
+.caja{background:#fff;border-radius:22px;max-width:380px;width:100%;padding:28px 22px;box-shadow:0 18px 50px rgba(0,0,0,.25);text-align:center}
+img{width:96px;height:96px;border-radius:22px}h1{font-size:22px;margin:14px 0 4px}p{color:var(--suave);margin:0 0 18px;font-size:15px;line-height:1.4}
+input{width:100%;font-size:18px;padding:14px;border:2px solid #d5dbe5;border-radius:12px;outline:none}input:focus{border-color:var(--azul)}
+button{width:100%;margin-top:12px;font-size:18px;padding:14px;border:0;border-radius:12px;background:var(--azul);color:#fff;font-weight:600}
+button:disabled{opacity:.6}#msg{min-height:22px;margin-top:12px;font-size:15px}.mal{color:#c62828}
+.ayuda{margin-top:18px;font-size:13px;color:var(--suave);text-align:left;background:#f3f5f8;border-radius:12px;padding:12px}
+</style></head><body>
+<div class="caja">
+  <img src="icono-192.png" alt="">
+  <h1>Aprender carnet de conducir</h1>
+  <p>Test del permiso B con su explicación. Escribe la contraseña que te han dado.</p>
+  <form id="f"><input id="c" type="password" autocomplete="current-password" placeholder="Contraseña" required>
+  <button id="b">Entrar</button></form>
+  <div id="msg"></div>
+  <div class="ayuda" id="ayuda">En iPhone: pulsa <b>Compartir</b> y luego <b>Añadir a pantalla de inicio</b>. Abre el icono nuevo y escribe la contraseña allí: después funciona sin internet.</div>
+</div>
+<script>
+// Versión mwo4k4nv
+const msg = (t, mal) => { const m = document.getElementById('msg'); m.textContent = t; m.className = mal ? 'mal' : ''; };
+const idb = () => new Promise((res, rej) => { const r = indexedDB.open('carnet', 1); r.onupgradeneeded = () => r.result.createObjectStore('k'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const leeClave = async () => { try { const db = await idb(); return await new Promise(res => { const q = db.transaction('k').objectStore('k').get('clave'); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); } catch (e) { return null; } };
+const guardaClave = async k => { const db = await idb(); await new Promise((res, rej) => { const t = db.transaction('k', 'readwrite'); t.objectStore('k').put(k, 'clave'); t.oncomplete = res; t.onerror = () => rej(t.error); }); };
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+async function controlado() {
+  if (!('serviceWorker' in navigator)) throw new Error('Este navegador no sirve: usa Safari o Chrome actualizados.');
+  await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+  if (!navigator.serviceWorker.controller) await new Promise(r => { navigator.serviceWorker.addEventListener('controllerchange', r, { once: true }); setTimeout(r, 4000); });
+}
+// Descarga todos los paquetes de imágenes para poder usarla sin internet
+async function guardaTodo(cfg) {
+  const c = await caches.open('carnet-' + cfg.version);
+  for (let i = 0; i < cfg.paquetes; i++) { const n = `paquete${i}.enc`; msg(`Preparando para usar sin internet… ${i + 1} de ${cfg.paquetes}`);
+    if (!(await c.match(n))) { const r = await fetch(n); if (r.ok) await c.put(n, r); } }
+}
+(async () => {
+  try { await controlado(); } catch (e) { msg(e.message, 1); return; }
+  if (await leeClave()) { location.replace('app.html'); return; }
+  document.getElementById('f').onsubmit = async ev => {
+    ev.preventDefault(); const bt = document.getElementById('b'); bt.disabled = true; msg('Comprobando…');
+    try {
+      const cfg = await (await fetch('config.json', { cache: 'no-store' })).json();
+      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(document.getElementById('c').value), 'PBKDF2', false, ['deriveKey']);
+      const k = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64(cfg.sal), iterations: cfg.vueltas, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      const app = new Uint8Array(await (await fetch('app.enc')).arrayBuffer());
+      try { await crypto.subtle.decrypt({ name: 'AES-GCM', iv: app.slice(0, 12) }, k, app.slice(12)); }
+      catch (e) { msg('Contraseña incorrecta.', 1); bt.disabled = false; return; }
+      await guardaClave(k); await guardaTodo(cfg); location.replace('app.html');
+    } catch (e) { msg('No se pudo entrar: ' + e.message, 1); bt.disabled = false; }
+  };
+})();
+</script></body></html>
